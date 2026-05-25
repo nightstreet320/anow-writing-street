@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>淋雪</title>
+    <title>淋雪 · 写作空间 · 时间导出</title>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; cursor: auto; }
@@ -22,7 +22,6 @@
             z-index: 0;
             pointer-events: none;
         }
-        /* 全局按钮组 */
         .left-top-buttons {
             position: fixed; top: 20px; left: 20px; z-index: 20;
             display: flex; gap: 12px;
@@ -82,7 +81,6 @@
             letter-spacing: 0.5px;
         }
         .romantic-btn:hover { background: rgba(255,255,255,0.2); color: white; }
-        /* 雪境调节 */
         .snow-control {
             margin-top: 12px;
             border-top: 1px solid rgba(255,255,255,0.2);
@@ -177,7 +175,6 @@
         .color-picker { width: 32px; height: 32px; border: none; border-radius: 50%; cursor: pointer; background: transparent; }
         .tip-text { font-size: 10px; color: #aaa; margin-top: 6px; text-align: center; }
         .random-tip { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); color: white; padding: 8px 16px; border-radius: 40px; font-size: 14px; z-index: 30; pointer-events: none; white-space: nowrap; transition: opacity 0.5s; }
-        /* 气泡样式安慰弹窗 */
         .comfort-bubble {
             position: fixed;
             bottom: 150px;
@@ -213,7 +210,6 @@
             border-top: 12px solid rgba(255, 240, 245, 0.9);
             filter: drop-shadow(0 2px 2px rgba(0,0,0,0.05));
         }
-        /* 文件管理器样式 */
         .file-manager {
             position: fixed; top: 80px; left: 20px; bottom: 20px;
             width: 300px; background: rgba(20,20,30,0.95);
@@ -244,7 +240,6 @@
         .fm-footer button { flex: 1; background: rgba(255,255,255,0.1); border: none; border-radius: 20px; padding: 6px; color: white; cursor: pointer; }
         .fm-footer button:hover { background: rgba(255,255,255,0.2); }
         .temp-rain-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
-        /* 情绪日历 */
         .calendar-panel {
             position: fixed; top: 80px; left: 20px; background: rgba(20,20,30,0.95);
             backdrop-filter: blur(16px); border-radius: 24px;
@@ -261,7 +256,6 @@
         .calendar-day .day-num { font-size: 10px; opacity: 0.7; }
         .weekday { font-size: 11px; opacity: 0.6; margin-bottom: 8px; }
         .calendar-tip { font-size: 10px; text-align: center; margin-top: 12px; opacity: 0.6; }
-        /* 自定义保存弹窗（毛玻璃风格） */
         .save-dialog-overlay {
             position: fixed;
             top: 0;
@@ -330,6 +324,16 @@
         }
         .save-dialog .dialog-buttons button.primary {
             background: #4a6fa5;
+        }
+        /* 时间导出下拉框样式 */
+        .export-range-select {
+            background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 40px;
+            padding: 5px 10px;
+            color: white;
+            margin-top: 6px;
+            width: 100%;
         }
     </style>
 </head>
@@ -406,7 +410,8 @@
         <div><strong>白噪音</strong></div>
         <div id="soundGroup"></div>
         <div class="action-btn" id="randomPlayBtn2" style="margin-top:6px;">🎲 随机播放</div>
-        <div class="action-btn" id="exportTxtBtn">📄 导出 TXT</div>
+        <div class="action-btn" id="exportTxtBtn">📄 导出 TXT（当前）</div>
+        <div class="action-btn" id="batchExportBtn">📂 时间导出</div>
         <div class="action-btn" id="screenshotBtn">📸 全屏截图（干净）</div>
         <div class="status-msg" id="saveStatus">✨ 自动保存已开启</div>
     </div>
@@ -507,9 +512,17 @@
             let startTime = performance.now()/1000; function render(now) { gl.uniform1f(iTime, (performance.now()/1000)-startTime); gl.uniform3f(iMouse, mouse[0], mouse[1], 0); gl.drawArrays(gl.TRIANGLE_STRIP,0,4); requestAnimationFrame(render); } render(); updateSnowUniforms();
         }
 
-        // ========== 情感检测与关怀系统 ==========
-        const moodMapping = { "极端痛苦":"伤心","低落/悲伤":"难过","自我否定":"伤心","孤独/渴望爱":"难过","疲惫/无力":"平静","无意义/迷茫":"伤心","被忽视/人际关系伤害":"难过","愤怒/委屈":"伤心","伪装坚强":"难过" };
+        // ========== 情感检测与关怀系统（冷却机制） ==========
+        const moodMapping = { 
+            "极端痛苦":"伤心", "低落/悲伤":"难过", "自我否定":"伤心", "孤独/渴望爱":"难过", 
+            "疲惫/无力":"平静", "无意义/迷茫":"伤心", "被忽视/人际关系伤害":"难过", 
+            "愤怒/委屈":"伤心", "伪装坚强":"难过", "开心":"开心", "生日":"开心", 
+            "饿":"平静", "烦":"难过", "梦想":"开心", "紧张":"难过"
+        };
         let moodLog = [];
+        let lastRuleTrigger = {};
+        const COOLDOWN_MS = 30000;
+
         function loadMoodLog() { const stored = localStorage.getItem('writing_moodLog'); if (stored) moodLog = JSON.parse(stored); else moodLog = []; }
         function saveMoodLog() { localStorage.setItem('writing_moodLog', JSON.stringify(moodLog)); }
         function addMoodEntry(category, level) {
@@ -520,9 +533,16 @@
             else moodLog.push({ dateStr: today, mood: mood });
             saveMoodLog(); renderCalendar();
         }
+
         const emotionalRules = [
-            { keywords: ["死","不活","累","撑","崩溃","烦","没救了","没意思","我要去死"], hidden: ["算了","无语","哭"], category:"极端痛苦", level:"重度", reply:"允许自己脆弱", extra:"眼泪和坚持一样伟大" },
-            { keywords: ["伤心","难过","不开心","心情差","郁闷","孤独","想哭","好痛","孤独"], hidden:["笑不出来","眼泪","心里空空的"], category:"低落/悲伤", level:"轻度", reply:"我看见你，我相信你，我支持你，我理解你，我爱你" },
+            { keywords: ["烦","好烦","心烦","烦躁","烦死了"], hidden: [], category:"烦", level:"轻度", reply:"不生气不生气 慢慢来！！" },
+            { keywords: ["开心","快乐","高兴","好开心","好快乐","哈哈哈哈"], hidden: [], category:"开心", level:"轻度", reply:"你开心我就开心！😊" },
+            { keywords: ["生日","过生日"], hidden: [], category:"生日", level:"轻度", reply:"生日快乐！天天开心！🎂" },
+            { keywords: ["饿","好饿","肚子饿"], hidden: [], category:"饿", level:"轻度", reply:"要好好吃饭哦！🍚" },
+            { keywords: ["梦想","我的梦想","想成为"], hidden: [], category:"梦想", level:"轻度", reply:"你一定可以成为你想成为的人！✨" },
+            { keywords: ["紧张","好紧张","害怕","慌"], hidden: [], category:"紧张", level:"轻度", reply:"不要紧张！深呼吸，你可以的。💪" },
+            { keywords: ["死","不想活","活不下去","撑不下去了","崩溃"], hidden: ["算了","无语","哭"], category:"极端痛苦", level:"重度", reply:"允许自己脆弱", extra:"眼泪和坚持一样伟大" },
+            { keywords: ["伤心","难过","不开心","心情差","郁闷","孤独","想哭","好痛"], hidden:["笑不出来","眼泪","心里空空的"], category:"低落/悲伤", level:"轻度", reply:"我看见你，我相信你，我支持你，我理解你，我爱你" },
             { keywords: ["差劲","一无是处","做不好","没用","失败","废物","配不上","我感觉自己好没用","我是个傻逼","我是傻逼","我真是个傻逼","我好傻"], hidden:["我是不是很让人讨厌","不理我","添麻烦","满足期待"], category:"自我否定", level:"中度", reply: function(text){ 
                 if(text.includes("傻逼") || text.includes("蠢") || text.includes("笨")) 
                     return "如果有人否定你，那我蹲下来抱抱你。";
@@ -536,17 +556,33 @@
             { keywords: ["对我坏","欺负我","被骂","被讨厌","不被关心","孤立","冷落","欺负"], hidden:["没主动找我","被忽视","不需要我"], category:"被忽视/人际关系伤害", level:"中度", reply:"请下定决心做最爱自己的人。" },
             { keywords: ["不公平","凭什么","欺负人","太委屈","气得发抖"], hidden:["凭什么这样对我","受够了","为什么总是我"], category:"愤怒/委屈", level:"中度", reply:"可以脆弱，可以不完美。" },
         ];
+        
         function detectEmotionSmart(text) {
             const lower = text.toLowerCase();
+            const now = Date.now();
             for (let rule of emotionalRules) {
-                for (let kw of rule.keywords) if (lower.includes(kw)) return rule;
-                for (let hid of rule.hidden) if (lower.includes(hid.toLowerCase())) return rule;
+                for (let kw of rule.keywords) {
+                    if (lower.includes(kw)) {
+                        const lastTime = lastRuleTrigger[rule.category] || 0;
+                        if (now - lastTime < COOLDOWN_MS) return null;
+                        lastRuleTrigger[rule.category] = now;
+                        return rule;
+                    }
+                }
+                for (let hid of rule.hidden) {
+                    if (lower.includes(hid.toLowerCase())) {
+                        const lastTime = lastRuleTrigger[rule.category] || 0;
+                        if (now - lastTime < COOLDOWN_MS) return null;
+                        lastRuleTrigger[rule.category] = now;
+                        return rule;
+                    }
+                }
             }
-            if ((lower.includes("感觉") && (lower.includes("没用")||lower.includes("不行"))) || (lower.includes("没人") && lower.includes("在乎")) || (lower.includes("为什么") && lower.includes("总是我"))) return emotionalRules.find(r=>r.category==="自我否定");
-            if ((lower.includes("欺负")||lower.includes("对我")) && (lower.includes("他")||lower.includes("她"))) return emotionalRules.find(r=>r.category==="被忽视/人际关系伤害");
             return null;
         }
+        
         function getReply(rule, text) { return typeof rule.reply === 'function' ? rule.reply(text) : rule.reply; }
+        
         function showComfortMessage(reply, extra) {
             const bubble = document.createElement('div');
             bubble.className = 'comfort-bubble';
@@ -563,6 +599,7 @@
             }
             setTimeout(() => { bubble.style.opacity = '0'; setTimeout(() => bubble.remove(), 500); }, 4000);
         }
+        
         let emotionTimer = null;
         function onEditorInput() {
             if (emotionTimer) clearTimeout(emotionTimer);
@@ -577,6 +614,7 @@
                 }
             }, 800);
         }
+        
         function checkAndCare() {
             const content = editor.innerText.trim();
             if (!content) return;
@@ -619,9 +657,53 @@
         function prevMonth() { if (currentMonth === 0) { currentMonth = 11; currentYear--; } else currentMonth--; renderCalendar(); }
         function nextMonth() { if (currentMonth === 11) { currentMonth = 0; currentYear++; } else currentMonth++; renderCalendar(); }
 
-        // ========== 文件管理器（同上一版本） ==========
+        // ========== 文件管理器（完整） ==========
         let fileTree = [], nextId = 1, currentOpenFileId = null;
         let backupContent = null;
+        // 辅助函数：获取文件的第一行（以逗号截止）
+        function getFileTitle(content) {
+            let firstLine = content.split('\n')[0].trim();
+            let commaIndex = firstLine.indexOf('，');
+            if (commaIndex === -1) commaIndex = firstLine.indexOf(',');
+            if (commaIndex !== -1) firstLine = firstLine.substring(0, commaIndex);
+            // 去除可能的时间标记（格式2025-05-25 14:30 --）
+            firstLine = firstLine.replace(/--\s*$/, '').trim();
+            if (firstLine.length === 0) return "无标题";
+            return firstLine.slice(0, 30);
+        }
+        // 保存时自动添加/更新时间
+        function addOrUpdateTimestamp(content) {
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            const timeLine = `${timestamp} --`;
+            const lines = content.split('\n');
+            // 检查最后一行是否已经是时间格式
+            if (lines.length > 0 && lines[lines.length-1].trim().endsWith('--')) {
+                lines[lines.length-1] = timeLine;
+            } else {
+                lines.push(timeLine);
+            }
+            return lines.join('\n');
+        }
+        function saveCurrentToFile(fileId) {
+            let content = editor.innerHTML;
+            // 添加或更新时间戳
+            content = addOrUpdateTimestamp(content);
+            const node = findNodeById(fileId);
+            if (node && node.type === 'file') {
+                node.content = content;
+                node.lastModified = Date.now();
+                saveFileTree();
+                document.getElementById('saveStatus').innerText = '✅ 已保存到文档库';
+                setTimeout(() => document.getElementById('saveStatus').innerText = '✨ 自动保存已开启', 1500);
+                if (currentOpenFileId === fileId) {
+                    backupContent = null;
+                    updateBackButtonState();
+                }
+                editor.innerHTML = content; // 同步显示
+            }
+        }
+        // 初始化文件树
         function initFileTree() {
             const saved = localStorage.getItem('writing_fileTree');
             if (saved) {
@@ -629,8 +711,8 @@
                 nextId = parseInt(localStorage.getItem('writing_nextId') || '1');
             } else {
                 fileTree = [
-                    { id: 1, name: "我的笔记", type: "folder", parentId: null, children: [2] },
-                    { id: 2, name: "随笔", type: "file", parentId: 1, content: "今天心情不错。" }
+                    { id: 1, name: "我的笔记", type: "folder", parentId: null, children: [2], lastModified: Date.now() },
+                    { id: 2, name: "随笔", type: "file", parentId: 1, content: "今天心情不错。\n\n2025-05-25 14:30 --", lastModified: Date.now() }
                 ];
                 nextId = 3;
                 saveFileTree();
@@ -658,7 +740,8 @@
             return null;
         }
         function addNode(parentId, name, type, content = "") {
-            const newNode = { id: nextId++, name, type, parentId };
+            const now = Date.now();
+            const newNode = { id: nextId++, name, type, parentId, lastModified: now };
             if (type === 'file') newNode.content = content;
             else newNode.children = [];
             if (parentId === null) {
@@ -709,19 +792,6 @@
         function renameNode(nodeId, newName) {
             const node = findNodeById(nodeId);
             if (node) { node.name = newName; saveFileTree(); renderFileManager(); }
-        }
-        function saveCurrentToFile(fileId) {
-            const node = findNodeById(fileId);
-            if (node && node.type === 'file') {
-                node.content = editor.innerHTML;
-                saveFileTree();
-                document.getElementById('saveStatus').innerText = '✅ 已保存到文档库';
-                setTimeout(() => document.getElementById('saveStatus').innerText = '✨ 自动保存已开启', 1500);
-                if (currentOpenFileId === fileId) {
-                    backupContent = null;
-                    updateBackButtonState();
-                }
-            }
         }
         function loadFile(fileId) {
             const node = findNodeById(fileId);
@@ -821,7 +891,7 @@
         backBtn.onclick = () => revertToBackup();
         updateBackButtonState();
 
-        // ========== 保存按钮：毛玻璃弹窗 ==========
+        // ========== 保存按钮：毛玻璃弹窗（带时间戳） ==========
         function showSaveDialog() {
             const existingOverlay = document.querySelector('.save-dialog-overlay');
             if (existingOverlay) existingOverlay.remove();
@@ -876,7 +946,9 @@
                     updateBackButtonState();
                     return;
                 }
-                const newFile = addNode(parentId, fileName, 'file', editor.innerHTML);
+                let content = editor.innerHTML;
+                content = addOrUpdateTimestamp(content);
+                const newFile = addNode(parentId, fileName, 'file', content);
                 loadFile(newFile.id);
                 overlay.remove();
                 backupContent = null;
@@ -885,7 +957,116 @@
         }
         document.getElementById('saveBtn').onclick = showSaveDialog;
         
-        // ========== 静音按钮（保持不变） ==========
+        // ========== 批量导出功能（按时间范围） ==========
+        function getFilesByTimeRange(days) {
+            const now = Date.now();
+            const files = [];
+            function traverse(nodes) {
+                for (let node of nodes) {
+                    if (node.type === 'file') {
+                        const modified = node.lastModified || 0;
+                        let include = false;
+                        if (days === 'today') {
+                            const todayStart = new Date().setHours(0,0,0,0);
+                            include = modified >= todayStart;
+                        } else if (days === '7') {
+                            include = modified >= now - 7 * 86400000;
+                        } else if (days === '30') {
+                            include = modified >= now - 30 * 86400000;
+                        } else if (days === '365') {
+                            include = modified >= now - 365 * 86400000;
+                        } else if (days === 'all') {
+                            include = true;
+                        }
+                        if (include) {
+                            files.push(node);
+                        }
+                    } else if (node.type === 'folder' && node.children) {
+                        const children = node.children.map(cid => findNodeById(cid)).filter(Boolean);
+                        traverse(children);
+                    }
+                }
+            }
+            traverse(fileTree);
+            return files;
+        }
+        async function batchExportByRange() {
+            const select = document.createElement('select');
+            select.className = 'export-range-select';
+            select.innerHTML = `
+                <option value="today">今日</option>
+                <option value="7">近7天</option>
+                <option value="30">近30天</option>
+                <option value="365">近一年</option>
+                <option value="all">全部</option>
+            `;
+            const confirmBtn = document.createElement('button');
+            confirmBtn.textContent = '确认导出';
+            confirmBtn.style.marginTop = '8px';
+            confirmBtn.style.background = '#4a6fa5';
+            confirmBtn.style.border = 'none';
+            confirmBtn.style.borderRadius = '40px';
+            confirmBtn.style.padding = '6px 12px';
+            confirmBtn.style.color = 'white';
+            confirmBtn.style.cursor = 'pointer';
+            const container = document.createElement('div');
+            container.style.position = 'fixed';
+            container.style.top = '50%';
+            container.style.left = '50%';
+            container.style.transform = 'translate(-50%, -50%)';
+            container.style.background = 'rgba(30,30,40,0.95)';
+            container.style.backdropFilter = 'blur(16px)';
+            container.style.borderRadius = '24px';
+            container.style.padding = '20px';
+            container.style.zIndex = '400';
+            container.style.width = '260px';
+            container.style.textAlign = 'center';
+            container.innerHTML = '<div style="margin-bottom:12px; color:white;">选择时间范围</div>';
+            container.appendChild(select);
+            container.appendChild(confirmBtn);
+            document.body.appendChild(container);
+            confirmBtn.onclick = async () => {
+                const range = select.value;
+                const files = getFilesByTimeRange(range);
+                if (files.length === 0) {
+                    alert('没有找到符合时间范围的文件');
+                    container.remove();
+                    return;
+                }
+                for (let file of files) {
+                    let content = file.content || '';
+                    // 移除时间戳行（如果不需要？但保留原内容）
+                    let title = getFileTitle(content);
+                    const blob = new Blob([content], {type: 'text/plain'});
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `${title}.txt`;
+                    link.click();
+                    URL.revokeObjectURL(blob);
+                    await new Promise(r => setTimeout(r, 200));
+                }
+                alert(`已导出 ${files.length} 个文件`);
+                container.remove();
+            };
+        }
+        document.getElementById('batchExportBtn').onclick = batchExportByRange;
+        
+        // ========== 导出当前编辑器内容为TXT（保留原有） ==========
+        function exportCurrentTxt() {
+            let content = editor.innerText;
+            // 如果当前有打开的文件，不自动添加时间，直接导出
+            const blob = new Blob([content], {type:'text/plain'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `writing_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.txt`;
+            a.click();
+            URL.revokeObjectURL(blob);
+            document.getElementById('saveStatus').innerText = '已导出当前内容';
+            setTimeout(() => document.getElementById('saveStatus').innerText = '✨ 自动保存已开启', 2000);
+        }
+        document.getElementById('exportTxtBtn').onclick = exportCurrentTxt;
+        
+        // ========== 静音按钮 ==========
         let audioCtx = null, isMuted = false, activeSources = {}, currentPlaying = null, isPlaying = false, dbPromise = null;
         const muteBtn = document.getElementById('muteBtn');
         async function getAudioContext() {
@@ -1003,19 +1184,6 @@
         editor.addEventListener('input', () => { clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(saveToLocal, 1000); });
         const saved = localStorage.getItem('writingContent'); if (saved) editor.innerHTML = saved;
         editor.addEventListener('input', onEditorInput);
-        
-        // ========== 导出 TXT ==========
-        function exportTxt() {
-            const blob = new Blob([editor.innerText], {type:'text/plain'});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'writing_note.txt';
-            a.click();
-            URL.revokeObjectURL(blob);
-            document.getElementById('saveStatus').innerText = '已保存为文件';
-            setTimeout(() => document.getElementById('saveStatus').innerText = '✨ 自动保存已开启', 2000);
-        }
-        document.getElementById('exportTxtBtn').onclick = exportTxt;
         
         // ========== Release 水雾消散 ==========
         let lastReleasedContent = "";
@@ -1145,9 +1313,7 @@
         fullscreenBtn.onclick = toggleFullscreen;
         document.addEventListener('fullscreenchange', () => { if(!document.fullscreenElement) document.body.classList.remove('fullscreen-controls-hidden'); else document.body.classList.add('fullscreen-controls-hidden'); });
         
-        // ========== 全屏干净截图（新） ==========
         async function takeCleanFullscreenScreenshot() {
-            // 隐藏所有UI控件（临时）
             const leftButtons = document.querySelector('.left-top-buttons');
             const topButtons = document.querySelector('.top-buttons');
             const settingsBar = document.querySelector('.settings-bar');
@@ -1156,37 +1322,23 @@
             const calendarPanel = document.getElementById('calendarPanel');
             const wasFileManagerVisible = fileManager && !fileManager.classList.contains('hidden');
             const wasCalendarVisible = calendarPanel && !calendarPanel.classList.contains('hidden');
-            
             if (leftButtons) leftButtons.style.visibility = 'hidden';
             if (topButtons) topButtons.style.visibility = 'hidden';
             if (settingsBar) settingsBar.style.visibility = 'hidden';
             if (snowControl) snowControl.style.visibility = 'hidden';
             if (fileManager && !wasFileManagerVisible) fileManager.classList.add('hidden');
             if (calendarPanel && !wasCalendarVisible) calendarPanel.classList.add('hidden');
-            
-            // 等待一帧确保样式生效
             await new Promise(r => requestAnimationFrame(r));
-            
             try {
-                // 截取整个 body（包含了背景和写作区域）
-                const canvas = await html2canvas(document.body, {
-                    scale: 2,
-                    useCORS: true,
-                    backgroundColor: null,
-                    logging: false,
-                    allowTaint: false
-                });
+                const canvas = await html2canvas(document.body, { scale: 2, useCORS: true, backgroundColor: null, logging: false, allowTaint: false });
                 const link = document.createElement('a');
                 link.download = 'writing_clean_screenshot.png';
                 link.href = canvas.toDataURL();
                 link.click();
                 document.getElementById('saveStatus').innerText = '✅ 已生成全屏截图';
                 setTimeout(() => document.getElementById('saveStatus').innerText = '✨ 自动保存已开启', 2000);
-            } catch (err) {
-                console.error(err);
-                alert("截图失败：" + err.message);
-            } finally {
-                // 恢复UI
+            } catch (err) { console.error(err); alert("截图失败：" + err.message); }
+            finally {
                 if (leftButtons) leftButtons.style.visibility = '';
                 if (topButtons) topButtons.style.visibility = '';
                 if (settingsBar) settingsBar.style.visibility = '';
@@ -1197,11 +1349,10 @@
                 else if (calendarPanel && wasCalendarVisible) calendarPanel.classList.remove('hidden');
             }
         }
-        // 替换原来的截图按钮事件
         const screenshotBtn = document.getElementById('screenshotBtn');
         screenshotBtn.onclick = takeCleanFullscreenScreenshot;
         
-        // ========== 文字颜色自动适应等（保持不变） ==========
+        // ========== 文字颜色自动适应 ==========
         function getBrightnessFromUrl(url, callback) {
             const img = new Image(); img.crossOrigin = 'Anonymous'; img.onload = function() { try { const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height); let r=0,g=0,b=0,count=0; const step = 10; for(let i=0; i<imageData.data.length; i+=4*step) { r+=imageData.data[i]; g+=imageData.data[i+1]; b+=imageData.data[i+2]; count++; } r/=count; g/=count; b/=count; const brightness = r*0.299 + g*0.587 + b*0.114; callback(brightness); } catch(e) { callback(128); } }; img.onerror = () => callback(128); img.src = url;
         }
